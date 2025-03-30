@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import torch
-#from aim import Run
 import wandb
 from torch.nn import BCEWithLogitsLoss
 from torch.optim import SGD
@@ -27,12 +26,12 @@ def _map_to_device(batch: dict, dev: torch.device) -> None:
 
 class Config:
     def __init__(self):
-        self.version = 1
+        self.version = 2
         self.dev = torch.device('cuda:0')
         self.n_epochs = 10
         self.lr = 0.01
-        self.base_hidden_size = 32
-        self.batch_size = 32
+        self.base_hidden_size = 128
+        self.batch_size = 128
         self.seed = 42
         self.weight_decay = 0
 
@@ -56,8 +55,8 @@ def train(train_dataset: Dataset, eval_dataset: Dataset, config: Config):
     optimizer = SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     run = wandb.init(
-        #entity='misis',
         project='hw_dl_1',
+        name='exp2',
         config={
             'version': version,
             'n_epochs': n_epochs,
@@ -118,6 +117,6 @@ def train(train_dataset: Dataset, eval_dataset: Dataset, config: Config):
 
 if __name__ == '__main__':
     train_ds, test_ds = load_loan(Path('loan_train.csv')), load_loan(Path('loan_test.csv'))
-    config_v1 = Config()
+    config_v2 = Config()
     #config.dev = 'cpu'
-    train(train_ds, test_ds, config_v1)
+    train(train_ds, test_ds, config_v2)

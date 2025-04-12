@@ -116,7 +116,7 @@ def train(train_dataset: Dataset, eval_dataset: Dataset, config: Config):
 
 
 if __name__ == '__main__':
-    train_ds, test_ds = load_loan(Path('loan_train.csv')), load_loan(Path('loan_test.csv'))
+    train_ds, test_ds = load_loan(Path('loan_train.csv'), Path('loan_test.csv'))
     config_v1 = Config()
     #config.dev = 'cpu'
     train(train_ds, test_ds, config_v1)

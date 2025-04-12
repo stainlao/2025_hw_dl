@@ -119,7 +119,7 @@ def train(train_dataset: Dataset, eval_dataset: Dataset, config: Config):
 
 
 if __name__ == '__main__':
-    train_ds, test_ds = load_loan(Path('loan_train.csv')), load_loan(Path('loan_test.csv'))
+    train_ds, test_ds = load_loan(Path('loan_train.csv'), Path('loan_test.csv'))
     #dropout_values = [0.1, 0.2, 0.5]
     dropout_values = [0.1, 0.9]
 

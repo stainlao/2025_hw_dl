@@ -3,11 +3,10 @@ from pathlib import Path
 import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 from torch import Tensor
 from torch.utils.data import Dataset
 from model import LoanModel
-
 
 _OWNERSHIP_MAP = {
     'OTHER': 0,
@@ -35,90 +34,102 @@ _GRADE_MAP = {
     'G': 6
 }
 
-
 _CB_DEFAULT_MAP = {
     'N': 0,
     'Y': 1,
 }
 
 
-def minmax_scale_column_fast(column, feature_range=(0, 1)):
-    scaler = MinMaxScaler(feature_range=feature_range)
-    return pd.Series(
-        scaler.fit_transform(column.values.reshape(-1, 1)).flatten(),
-        index=column.index,
-        name=column.name
-    )
+def preprocess_data(train_df: pd.DataFrame, test_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    numerical_columns = [
+        'person_age', 'person_income', 'person_emp_length',
+        'loan_amnt', 'loan_int_rate', 'loan_percent_income',
+        'cb_person_cred_hist_length'
+    ]
+
+    # Инициализация и обучение скейлеров на тренировочных данных
+    scalers = {}
+    for col in numerical_columns:
+        scaler = StandardScaler()
+        scaler.fit(train_df[col].values.reshape(-1, 1))
+        scalers[col] = scaler
+
+    # Применение скейлеров
+    for col in numerical_columns:
+        train_df[col] = pd.Series(
+            scalers[col].transform(train_df[col].values.reshape(-1, 1)).flatten(),
+            index=train_df.index,
+            name=col
+        )
+        test_df[col] = pd.Series(
+            scalers[col].transform(test_df[col].values.reshape(-1, 1)).flatten(),
+            index=test_df.index,
+            name=col
+        )
+
+    # Обработка категориальных признаков
+    categorical_mappings = {
+        'person_home_ownership': _OWNERSHIP_MAP,
+        'loan_intent': _INTENT_MAP,
+        'loan_grade': _GRADE_MAP,
+        'cb_person_default_on_file': _CB_DEFAULT_MAP
+    }
+
+    for col, mapping in categorical_mappings.items():
+        train_df[col] = train_df[col].map(mapping)
+        test_df[col] = test_df[col].map(mapping)
+
+    return train_df, test_df
 
 
 class LoanDataset(Dataset):
     def __init__(self, data: pd.DataFrame):
-        # числовые
-        data['person_age'] = minmax_scale_column_fast(data['person_age'])
-        data['person_income'] = minmax_scale_column_fast(data['person_income'])
-        data['person_emp_length'] = minmax_scale_column_fast(data['person_emp_length'])
-        data['loan_amnt'] = minmax_scale_column_fast(data['loan_amnt'])
-        data['loan_int_rate'] = minmax_scale_column_fast(data['loan_int_rate'])
-        data['loan_percent_income'] = minmax_scale_column_fast(data['loan_percent_income'])
-        data['cb_person_cred_hist_length'] = minmax_scale_column_fast(data['cb_person_cred_hist_length'])
-        # категориальные
-        data['person_home_ownership'] = data['person_home_ownership'].map(_OWNERSHIP_MAP)
-        data['loan_intent'] = data['loan_intent'].map(_INTENT_MAP)
-        data['loan_grade'] = data['loan_grade'].map(_GRADE_MAP)
-        data['cb_person_default_on_file'] = data['cb_person_default_on_file'].map(_CB_DEFAULT_MAP)
-        #print(data.info())
         self._data = data
 
     def __len__(self):
         return len(self._data)
 
-    def __getitem__(self, item: int) -> dict[str, dict[str | Tensor] | Tensor]:
-        item = self._data.iloc[item]
+    def __getitem__(self, idx: int) -> dict[str, dict[str, Tensor] | Tensor]:
+        row = self._data.iloc[idx]
         return {
-            'target': torch.scalar_tensor(item['loan_status'], dtype=torch.float32),
+            'target': torch.tensor(row['loan_status'], dtype=torch.float32),
             'cat_features': {
-                'person_home_ownership': torch.scalar_tensor(item['person_home_ownership'], dtype=torch.long),
-                'loan_intent': torch.scalar_tensor(item['loan_intent'], dtype=torch.long),
-                'loan_grade': torch.scalar_tensor(item['loan_grade'], dtype=torch.long),
-                'cb_person_default_on_file': torch.scalar_tensor(item['cb_person_default_on_file'], dtype=torch.long),
+                'person_home_ownership': torch.tensor(row['person_home_ownership'], dtype=torch.long),
+                'loan_intent': torch.tensor(row['loan_intent'], dtype=torch.long),
+                'loan_grade': torch.tensor(row['loan_grade'], dtype=torch.long),
+                'cb_person_default_on_file': torch.tensor(row['cb_person_default_on_file'], dtype=torch.long),
             },
             'numeric_features': {
-                'person_age': torch.scalar_tensor(item['person_age'], dtype=torch.float32),
-                'person_income': torch.scalar_tensor(item['person_income'], dtype=torch.float32),
-                'person_emp_length': torch.scalar_tensor(item['person_emp_length'], dtype=torch.float32),
-                'loan_amnt': torch.scalar_tensor(item['loan_amnt'], dtype=torch.float32),
-                'loan_int_rate': torch.scalar_tensor(item['loan_int_rate'], dtype=torch.float32),
-                'loan_percent_income': torch.scalar_tensor(item['loan_percent_income'], dtype=torch.float32),
-                'cb_person_cred_hist_length': torch.scalar_tensor(item['cb_person_cred_hist_length'], dtype=torch.float32)
+                'person_age': torch.tensor(row['person_age'], dtype=torch.float32),
+                'person_income': torch.tensor(row['person_income'], dtype=torch.float32),
+                'person_emp_length': torch.tensor(row['person_emp_length'], dtype=torch.float32),
+                'loan_amnt': torch.tensor(row['loan_amnt'], dtype=torch.float32),
+                'loan_int_rate': torch.tensor(row['loan_int_rate'], dtype=torch.float32),
+                'loan_percent_income': torch.tensor(row['loan_percent_income'], dtype=torch.float32),
+                'cb_person_cred_hist_length': torch.tensor(row['cb_person_cred_hist_length'], dtype=torch.float32)
             }
         }
 
 
 class LoanCollator:
-    def __call__(self, items: list[dict[str, dict[str | Tensor] | Tensor]]) -> dict[str, dict[str | Tensor] | Tensor]:
+    def __call__(self, batch: list) -> dict:
         return {
-            'target': torch.stack([x['target'] for x in items]),
+            'target': torch.stack([x['target'] for x in batch]),
             'cat_features': {
-                'person_home_ownership': torch.stack([x['cat_features']['person_home_ownership'] for x in items]),
-                'loan_intent': torch.stack([x['cat_features']['loan_intent'] for x in items]),
-                'loan_grade': torch.stack([x['cat_features']['loan_grade'] for x in items]),
-                'cb_person_default_on_file': torch.stack([x['cat_features']['cb_person_default_on_file'] for x in items])
+                k: torch.stack([x['cat_features'][k] for x in batch])
+                for k in batch[0]['cat_features'].keys()
             },
             'numeric_features': {
-                'person_age': torch.stack([x['numeric_features']['person_age'] for x in items]),
-                'person_income': torch.stack([x['numeric_features']['person_income'] for x in items]),
-                'person_emp_length': torch.stack([x['numeric_features']['person_emp_length'] for x in items]),
-                'loan_amnt': torch.stack([x['numeric_features']['loan_amnt'] for x in items]),
-                'loan_int_rate': torch.stack([x['numeric_features']['loan_int_rate'] for x in items]),
-                'loan_percent_income': torch.stack([x['numeric_features']['loan_percent_income'] for x in items]),
-                'cb_person_cred_hist_length': torch.stack([x['numeric_features']['cb_person_cred_hist_length'] for x in items])
+                k: torch.stack([x['numeric_features'][k] for x in batch])
+                for k in batch[0]['numeric_features'].keys()
             }
         }
 
 
-def load_loan(file: Path) -> LoanDataset:
-    df = pd.read_csv(file)
-
-    return LoanDataset(df)
+def load_loan(train_path: Path, test_path: Path) -> tuple[LoanDataset, LoanDataset]:
+    train_df = pd.read_csv(train_path)
+    test_df = pd.read_csv(test_path)
+    train_df, test_df = preprocess_data(train_df, test_df)
+    return LoanDataset(train_df), LoanDataset(test_df)
 
 
